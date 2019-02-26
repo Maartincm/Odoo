@@ -591,7 +591,7 @@ class WebsiteSupportTicket(models.Model):
     @api.multi
     def process_staff_response(self, mail):
         partners = self.category.cat_user_ids.mapped(
-            'partner_id') + self.partner_id
+            'partner_id') + self.partner_id - mail.author_id
         parsed_body = self._parse_email_body(mail)
         parsed_subject = self._parse_email_subject(mail)
         values = {
@@ -613,6 +613,34 @@ class WebsiteSupportTicket(models.Model):
                                            raise_if_not_found=False).id,
             **values)
         mail.unlink()
+        new_mail = new_mail.with_context(ctx)
+        return new_mail
+
+    @api.multi
+    def process_customer_response(self, mail):
+        partners = self.category.cat_user_ids.mapped(
+            'partner_id')
+        parsed_body = self._parse_email_body(mail)
+        parsed_subject = self._parse_email_subject(mail)
+        values = {
+            'body': parsed_body,
+            'subject': parsed_subject,
+            'partner_ids': partners.ids,
+            'parent_id': self.first_message.id,
+            'res_id': self.id,
+            'email_from': 'maartiin01@gmail.com',
+            'author_id': mail.author_id.id,
+        }
+        ctx = self.env.context.copy()
+        ctx.update({
+            'break_message_post': True,
+        })
+        new_mail = self.with_context(ctx).message_post(
+            message_type="comment",
+            subtype_id=self.sudo().env.ref('mail.mt_comment',
+                                           raise_if_not_found=False).id,
+            **values)
+        # mail.unlink()
         new_mail = new_mail.with_context(ctx)
         return new_mail
 
@@ -856,4 +884,6 @@ class MailThread(models.AbstractModel):
             res = self.process_staff_response(res)
         elif not self.first_message:
             self.process_new_ticket(res)
+        else:
+            self.process_customer_response(res)
         return res
